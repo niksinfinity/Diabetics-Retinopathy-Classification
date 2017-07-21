@@ -1,0 +1,127 @@
+
+Diabetic RetinoPathy logistic regression Test One
+
+```{r}
+# Data is in arff type which is WEKA Software. USed Farrf lib for reading data
+
+#Reading Data and Feature Naming
+library(foreign)
+library(car)
+library(dplyr)
+library(glmnet)
+
+data<-read.arff("messidor_features.arff")
+
+#data<-data %>%
+  #mutate(DR = ifelse(data$Class == 1,1,0)) %>%
+  #select(-Class)
+
+#View(data)
+str(data)
+#Base naming all features
+colnames<-c(paste0("X",c(0:(ncol(data)-1))))
+colnames
+ncol(data)
+names(data)<-colnames
+data
+
+#Naming Features X2-X7
+
+feature.2.7<-c(paste0("X.MA",c(1:6)))
+feature.2.7
+
+#Naming Feature X8-X15
+feature.8.15<-c(paste0("X.EX",c(1:8)))
+feature.8.15
+
+#Naming remaining all features
+
+RFeatures<-c("Quality","Pre_Screening","EuclDist","DOpticDisc","AM_FM","DR")
+#Combinig all features names
+Features<-c(RFeatures[1:2],feature.2.7,feature.8.15,RFeatures[3:6])
+names(data)<-Features
+#View(data)
+tdata<-data
+
+#No NA's Found i.e missing data
+tdata[is.na(tdata)]
+
+v<-c(1,2,3,3,NA,2,1,NA,123)
+v1<-c(1,2,3,3,2,1,123)
+v[is.na(v)]
+v1[is.na(v1)]
+```
+
+
+
+After performing somewhat data manpulation aka cleaning like feature naming,finding na's
+
+Sampling Data into Train and Test as 70 to 30 ratio
+
+
+```{r}
+#Logistc Regression
+
+#Sampling into Train and Test Data
+set.seed(2)
+
+s<-sample(1:nrow(tdata),0.7*nrow(tdata))
+train<-tdata[s,]
+test<-tdata[-s,]
+
+View(train)
+#View(test)
+```
+
+
+
+
+```{r}
+
+library(mlr)
+library(FSelector)
+trainTask<- makeClassifTask(data=train,target = "DR",positive="1")
+testTask<-makeClassifTask(data=test,target = "DR",positive = "1")
+trainTask
+str(getTaskData(trainTask))
+
+#normalization the variables
+
+#trainTask<-normalizeFeatures(trainTask,method="standardize")
+trainTask
+#testTask<-normalizeFeatures(testTask,method="standardize")
+
+
+#Feature importance
+imp.features<-generateFilterValuesData(trainTask,method = c("information.gain","chi.squared"))
+
+plotFilterValues(imp.features,n.show = 20)
+
+
+```
+
+```{r}
+#Making learner
+logistic.learner <- makeLearner("classif.logreg",predict.type = "response")
+logistic.learner
+
+#Cross-Validation
+cv.logistic<- crossval(learner = logistic.learner,task=trainTask,iters=3,stratify = TRUE,measures = acc,show.info = F)
+
+#Checking Accuracy 
+cv.logistic$aggr
+cv.logistic$measures.test
+
+#Train Model
+fmodel<-train(logistic.learner,trainTask)
+getLearnerModel(fmodel)
+
+#Predict on test data
+fpmodel<-predict(fmodel,testTask)
+
+#create submission file
+submit<-data.frame(test,ML_DR=fpmodel$data$response)
+write.csv(submit,"submit2.csv",row.names=F)
+
+```
+
