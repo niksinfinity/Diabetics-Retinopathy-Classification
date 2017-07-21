@@ -8,6 +8,7 @@ Diabetic RetinoPathy logstic regression Test One
 library(foreign)
 library(car)
 library(dplyr)
+library(glmnet)
 
 data<-read.arff("messidor_features.arff")
 
@@ -15,7 +16,7 @@ data<-data %>%
   mutate(DR = ifelse(data$Class == 1,1,0)) %>%
   select(-Class)
 
-View(data)
+#View(data)
 str(data)
 #Base naming all features
 colnames<-c(paste0("X",c(0:(ncol(data)-1))))
@@ -39,7 +40,7 @@ RFeatures<-c("Quality","Pre_Screening","EuclDist","DOpticDisc","AM_FM","DR")
 #Combinig all features names
 Features<-c(RFeatures[1:2],feature.2.7,feature.8.15,RFeatures[3:6])
 names(data)<-Features
-View(data)
+#View(data)
 tdata<-data
 
 #No NA's Found i.e missing data
@@ -68,8 +69,8 @@ s<-sample(1:nrow(tdata),0.7*nrow(tdata))
 train<-tdata[s,]
 test<-tdata[-s,]
 
-View(train)
-View(test)
+#View(train)
+#View(test)
 ```
 
 
@@ -114,8 +115,84 @@ After Train Data VIF fit in glm left
 
 ```{r}
 
+train
+glm.train.fit<- train %>% select(-X.MA2,-X.MA3, -X.MA4, -X.MA5 ,- X.EX7, -X.EX3, -X.EX5)
+glm.train.fit
 
 
+fit = glm(DR ~.,family = "binomial", data = glm.train.fit)
 
+fit<-step(fit)
+formula(fit)
+
+fit = glm(DR ~ Pre_Screening + X.MA1 + X.MA6 + X.EX1 + X.EX2 + 
+    X.EX8 ,family = "binomial", data = glm.train.fit)
+summary(fit)
+
+```
+
+```{r}
+
+train$score <- predict(fit, newdata = train, type = "response")
+library(ggplot2)
+ggplot(train, aes(y=DR, x=score, color=factor(DR))) + geom_point() + geom_jitter()
+
+
+```
+
+```{r}
+cutoff_data=data.frame(cutoff=0,TP=0,FP=0,FN=0,TN=0,P=0,N=0)
+cutoffs=seq(0,1,length=100)
+
+for (cutoff in cutoffs){
+  predicted=as.numeric(train$score>cutoff)
+  
+  TP=sum(predicted==1 & train$DR==1)
+  FP=sum(predicted==1 & train$DR==0)
+  FN=sum(predicted==0 & train$DR==1)
+  TN=sum(predicted==0 & train$DR==0)
+  P=FN+TP
+  N=TN+FP
+  cutoff_data=rbind(cutoff_data,c(cutoff,TP,FP,FN,TN,P,N))
+}
+
+# removing the dummy data cotaining top row
+cutoff_data=cutoff_data[-1,]
+
+
+cutoff_data=cutoff_data %>%
+  mutate(Sn=TP/P, Sp=TN/N,dist=sqrt((1-Sn)**2+(1-Sp)**2)) %>%
+  mutate(KS=abs((TP/P)-(FP/N))) %>%
+  mutate(Accuracy=(TP+TN)/(P+N)) %>%
+  mutate(Lift=(TP/P)/((TP+FP)/(P+N))) %>%
+  mutate(M=(8*FN+2*FP)/(P+N)) %>%
+  select(-P,-N)
+#P=FN+TP
+ # N=TN+FP
+
+
+#View(cutoff_data)
+
+```
+
+```{r}
+
+library(tidyr)  
+cutoff.viz = cutoff_data%>%
+  select(cutoff,Sn,Sp,dist,KS,Accuracy,Lift,M)%>%
+  gather(Criterion, value, Sn:M)
+  
+ggplot(filter(cutoff.viz,Criterion != "Lift"), aes(x=cutoff,y=value,color=Criterion))+geom_line()
+
+test$score = predict(fit,newdata =test, type = "response")
+
+KS.cutoff = cutoff_data$cutoff[which(cutoff_data$KS == max(cutoff_data$KS))][1]
+
+table(y = train$DR,cutoff = as.numeric(train$score > KS.cutoff))
+
+accuracy = (319+235)/(319+235+185+66)
+accuracy*100
+
+View(test)
 ```
 
